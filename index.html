@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>広さくらべ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: sans-serif;
+            background-color: #ffffff;
+        }
+
+        /* 3D押し込みボタンデザイン */
+        .btn-push {
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .btn-push:active {
+            transform: scale(0.98);
+        }
+
+        /* 選択可能状態の明確な強調枠線とアテンションアニメーション */
+        .ready-target {
+            border: 6px solid #f59e0b !important; /* 鮮やかなオレンジ色の太枠 */
+            border-radius: 20px;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+            animation: pulse-border 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(245, 158, 11, 0.8); }
+        }
+
+        /* 脈動・強調アニメーション */
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s infinite ease-in-out;
+        }
+
+        /* 正解時のアニメーション */
+        @keyframes celebrate {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.08) rotate(2deg); }
+            100% { transform: scale(1); }
+        }
+        .celebrate-anim {
+            animation: celebrate 0.5s ease-in-out infinite alternate;
+        }
+
+        /* 不正解時のシェイク */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-12px); }
+            40%, 80% { transform: translateX(12px); }
+        }
+        .shake-anim {
+            animation: shake 0.4s ease-in-out;
+        }
+
+        /* バウンスアニメーション */
+        @keyframes bounce-gentle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+        }
+        .animate-bounce-gentle {
+            animation: bounce-gentle 1.5s infinite ease-in-out;
+        }
+
+        /* 紙吹雪 */
+        .confetti {
+            position: absolute;
+            top: -20px;
+            z-index: 50;
+            animation: fall 3s linear forwards;
+        }
+        @keyframes fall {
+            to {
+                transform: translateY(105vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-white h-screen w-screen overflow-hidden flex flex-col justify-between p-1 sm:p-2">
+
+    <!-- 紙吹雪コンテナ -->
+    <div id="confetti-container" class="fixed inset-0 pointer-events-none z-50"></div>
+
+    <!-- 極細ヘッダー（音声聞き直しボタン・進行メーター） -->
+    <header class="flex justify-between items-center bg-white rounded-full px-3 py-0.5 border border-slate-100 shadow-none">
+        <!-- 音声聞き直しボタン (スピーカーアイコン) -->
+        <button onclick="speakCurrentPrompt()" class="btn-push text-slate-700 p-0.5 rounded-full flex items-center justify-center hover:bg-slate-100">
+            <svg class="w-6 h-6 sm:w-7 sm:h-7 fill-current" viewBox="0 0 24 24">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            </svg>
+        </button>
+
+        <!-- 星進行メーター (5問) -->
+        <div id="progress-stars" class="flex gap-1 sm:gap-2"></div>
+
+        <!-- レイアウト調整用ダミー領域 -->
+        <div class="w-6 sm:w-7"></div>
+    </header>
+
+    <!-- メインエリア（まっさらな背景） -->
+    <main class="flex-1 flex flex-col justify-center items-center my-0 relative bg-white">
+
+        <!-- 1. スタート画面 -->
+        <div id="screen-start" class="flex flex-col items-center justify-center gap-10 w-full h-full">
+            <button onclick="startGame()" class="btn-push bg-emerald-500 hover:bg-emerald-400 text-white rounded-full p-12 sm:p-16 border-8 border-emerald-600 shadow-2xl animate-pulse-slow flex items-center justify-center">
+                <svg class="w-24 h-24 sm:w-32 sm:h-32 fill-current ml-3" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- 2. ゲーム画面（完全フラット背景） -->
+        <div id="screen-game" class="hidden flex-col justify-between items-center w-full h-full max-w-5xl">
+            <!-- 2つのブロック選択ボタン（左 vs 右） -->
+            <div class="grid grid-cols-2 gap-2 sm:gap-4 w-full flex-1 items-center justify-items-center my-1 p-2">
+                
+                <!-- 左ブロックボタン（背景無地・枠線なし） -->
+                <button id="btn-left" onclick="checkAnswer('left')" class="btn-push w-full h-full bg-white p-2 flex flex-col items-center justify-center relative overflow-hidden border-4 border-transparent transition-all duration-300">
+                    <div id="container-left" class="w-full h-full flex items-center justify-center"></div>
+                </button>
+
+                <!-- 右ブロックボタン（背景無地・枠線なし） -->
+                <button id="btn-right" onclick="checkAnswer('right')" class="btn-push w-full h-full bg-white p-2 flex flex-col items-center justify-center relative overflow-hidden border-4 border-transparent transition-all duration-300">
+                    <div id="container-right" class="w-full h-full flex items-center justify-center"></div>
+                </button>
+
+            </div>
+        </div>
+
+        <!-- 3. 結果画面 -->
+        <div id="screen-result" class="hidden flex-col items-center justify-center gap-10 w-full h-full">
+            <div class="animate-bounce-gentle">
+                <svg class="w-32 h-32 sm:w-44 sm:h-44 fill-amber-400 stroke-amber-600 stroke-[2]" viewBox="0 0 24 24">
+                    <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/>
+                </svg>
+            </div>
+            
+            <button onclick="startGame()" class="btn-push bg-sky-500 hover:bg-sky-400 text-white rounded-full p-10 sm:p-12 border-8 border-sky-600 shadow-2xl flex items-center justify-center">
+                <svg class="w-20 h-20 sm:w-24 sm:h-24 fill-current" viewBox="0 0 24 24">
+                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                </svg>
+            </button>
+        </div>
+
+    </main>
+
+    <script>
+        // --- ゲーム状態変数 ---
+        let currentQuestion = 0;
+        const totalQuestions = 5;
+        let questions = [];
+        let isAnsweringBlocked = false;
+        let questionPromptTimer = null; // 全マス選択後のタイマー
+
+        // タップカウント保持状態
+        let currentCounts = { left: 0, right: 0 };
+        let cellCounts = { left: {}, right: {} };
+
+        // Web Audio API
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // --- ブロックタイル定義 (1〜6マス: 正方形・正方形に近いコンパクトな形状を優先) ---
+        const BLOCK_PATTERNS = {
+            1: [
+                [[0,0]] // 1x1 正方形
+            ],
+            2: [
+                [[0,0],[0,1]], // 1x2 長方形
+                [[0,0],[1,0]]  // 2x1 長方形
+            ],
+            3: [
+                [[0,0],[0,1],[1,0]], // 2x2の枠に収まるL字（正方形に近い形）
+                [[0,0],[0,1],[1,1]],
+                [[0,0],[1,0],[1,1]],
+                [[0,1],[1,0],[1,1]]
+            ],
+            4: [
+                [[0,0],[0,1],[1,0],[1,1]] // 2x2 正方形
+            ],
+            5: [
+                [[0,0],[0,1],[0,2],[1,0],[1,1]], // 2x3の枠に収まる正方形に近い形
+                [[0,0],[0,1],[1,0],[1,1],[1,2]],
+                [[0,0],[1,0],[2,0],[0,1],[1,1]],
+                [[0,0],[0,1],[1,0],[2,0],[2,1]]
+            ],
+            6: [
+                [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], // 2x3 長方形
+                [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]]  // 3x2 長方形
+            ]
+        };
+
+        // --- 効果音発音処理 ---
+        function playSoundTap() {
+            initAudio();
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.08);
+            } catch (e) {}
+        }
+
+        function playSoundSuccess() {
+            initAudio();
+            try {
+                const now = audioCtx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                notes.forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+                    gain.gain.setValueAtTime(0.3, now + idx * 0.09);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.09 + 0.25);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + idx * 0.09);
+                    osc.stop(now + idx * 0.09 + 0.25);
+                });
+            } catch (e) {}
+        }
+
+        function playSoundError() {
+            initAudio();
+            try {
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.setValueAtTime(160, now + 0.15);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(now + 0.3);
+            } catch (e) {}
+        }
+
+        function playSoundVictory() {
+            initAudio();
+            try {
+                const now = audioCtx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98];
+                notes.forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                    gain.gain.setValueAtTime(0.35, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 1.2);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 1.2);
+                });
+            } catch (e) {}
+        }
+
+        // --- 数字読み上げ機能 (Web Speech API) ---
+        function speakNumber(num) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const uttr = new SpeechSynthesisUtterance(String(num));
+            uttr.lang = 'ja-JP';
+            uttr.rate = 1.0;
+            uttr.pitch = 1.1;
+            window.speechSynthesis.speak(uttr);
+        }
+
+        // --- 音声指示読み上げ (Web Speech API) ---
+        function speakCurrentPrompt() {
+            if (questions.length === 0 || currentQuestion >= totalQuestions) return;
+            if (!('speechSynthesis' in window)) return;
+            
+            window.speechSynthesis.cancel();
+            const q = questions[currentQuestion];
+            const text = q.mode === 'big' ? 'おおきい は？' : 'ちいさい は？';
+            
+            const uttr = new SpeechSynthesisUtterance(text);
+            uttr.lang = 'ja-JP';
+            uttr.rate = 0.85;
+            uttr.pitch = 1.1;
+            window.speechSynthesis.speak(uttr);
+        }
+
+        // --- 紙吹雪演出 ---
+        function launchConfetti() {
+            const container = document.getElementById('confetti-container');
+            container.innerHTML = '';
+            const colors = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+            for (let i = 0; i < 60; i++) {
+                const piece = document.createElement('div');
+                piece.className = 'confetti';
+                piece.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                piece.style.left = `${Math.random() * 100}%`;
+                piece.style.animationDelay = `${Math.random() * 1.5}s`;
+                const size = Math.floor(Math.random() * 14) + 12;
+                piece.style.width = `${size}px`;
+                piece.style.height = `${size}px`;
+                if (Math.random() > 0.5) piece.style.borderRadius = '50%';
+                container.appendChild(piece);
+            }
+        }
+
+        // --- 問題セット生成 ---
+        function generateQuestions() {
+            questions = [];
+            for (let i = 0; i < totalQuestions; i++) {
+                let sizeLeft = Math.floor(Math.random() * 6) + 1;
+                let sizeRight = Math.floor(Math.random() * 6) + 1;
+                
+                while (sizeLeft === sizeRight) {
+                    sizeRight = Math.floor(Math.random() * 6) + 1;
+                }
+
+                const mode = (i % 2 === 0) ? 'big' : 'small'; 
+
+                const patternLeft = BLOCK_PATTERNS[sizeLeft][Math.floor(Math.random() * BLOCK_PATTERNS[sizeLeft].length)];
+                const patternRight = BLOCK_PATTERNS[sizeRight][Math.floor(Math.random() * BLOCK_PATTERNS[sizeRight].length)];
+
+                const correctAnswer = (mode === 'big') ? 
+                    (sizeLeft > sizeRight ? 'left' : 'right') : 
+                    (sizeLeft < sizeRight ? 'left' : 'right');
+
+                questions.push({
+                    mode: mode,
+                    left: { size: sizeLeft, pattern: patternLeft },
+                    right: { size: sizeRight, pattern: patternRight },
+                    correct: correctAnswer
+                });
+            }
+        }
+
+        // --- ゲーム開始 ---
+        function startGame() {
+            initAudio();
+            playSoundTap();
+            currentQuestion = 0;
+            generateQuestions();
+
+            document.getElementById('screen-start').classList.add('hidden');
+            document.getElementById('screen-result').classList.add('hidden');
+            document.getElementById('screen-game').classList.remove('hidden');
+            document.getElementById('screen-game').classList.add('flex');
+
+            renderQuestion();
+        }
+
+        // --- 問題描画 ---
+        function renderQuestion() {
+            if (questionPromptTimer) {
+                clearTimeout(questionPromptTimer);
+                questionPromptTimer = null;
+            }
+            isAnsweringBlocked = false;
+            currentCounts = { left: 0, right: 0 };
+            cellCounts = { left: {}, right: {} };
+
+            const q = questions[currentQuestion];
+
+            // 進行状況の星
+            const starsContainer = document.getElementById('progress-stars');
+            starsContainer.innerHTML = '';
+            for (let i = 0; i < totalQuestions; i++) {
+                const isCleared = i < currentQuestion;
+                const starSvg = `
+                    <svg class="w-5 h-5 sm:w-6 sm:h-6 ${isCleared ? 'fill-amber-400 stroke-amber-500' : 'fill-slate-200 stroke-slate-300'}" viewBox="0 0 24 24">
+                        <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+                    </svg>
+                `;
+                starsContainer.insertAdjacentHTML('beforeend', starSvg);
+            }
+
+            // シンプルなブロック描画（タップカウント付き）
+            renderSimpleImageStyleBlocks('container-left', q.left.pattern, 'left');
+            renderSimpleImageStyleBlocks('container-right', q.right.pattern, 'right');
+
+            // アニメーションおよび強調枠線のリセット
+            const btnLeft = document.getElementById('btn-left');
+            const btnRight = document.getElementById('btn-right');
+            btnLeft.classList.remove('celebrate-anim', 'shake-anim', 'ready-target');
+            btnRight.classList.remove('celebrate-anim', 'shake-anim', 'ready-target');
+        }
+
+        // --- 超シンプルなブロックタイル描画 (固定セルサイズ版) ---
+        function renderSimpleImageStyleBlocks(containerId, pattern, side) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            let maxR = 0, maxC = 0;
+            pattern.forEach(([r, c]) => {
+                if (r > maxR) maxR = r;
+                if (c > maxC) maxC = c;
+            });
+
+            const rows = maxR + 1;
+            const cols = maxC + 1;
+            
+            // 全すべてのブロックで1マスの大きさを「70px」で完全統一
+            const cellSize = 70; 
+
+            const width = cols * cellSize;
+            const height = rows * cellSize;
+
+            // 画像通りの配色（明るいブルー面＋濃いネイビーの外枠・区切り線）
+            const fillColor = '#419bf9';   // 面の青色
+            const strokeColor = '#1d3e8e'; // 濃い青枠線
+            const strokeWidth = 5;         // 線幅
+
+            let svgHtml = `
+                <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="width: ${width}px; height: ${height}px;">
+            `;
+
+            pattern.forEach(([r, c], idx) => {
+                const x = c * cellSize;
+                const y = r * cellSize;
+                const cellNum = cellCounts[side][idx] || 0;
+
+                // セル全体（タップ用グループ）
+                svgHtml += `
+                    <g onclick="event.stopPropagation(); tapCell('${side}', ${idx})" class="cursor-pointer">
+                        <rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" 
+                              fill="${fillColor}" 
+                              stroke="${strokeColor}" 
+                              stroke-width="${strokeWidth}" 
+                              stroke-linejoin="miter" />
+                `;
+
+                // タップされた場合の数字表示 (1, 2, 3...)
+                if (cellNum > 0) {
+                    const cx = x + cellSize / 2;
+                    const cy = y + cellSize / 2;
+                    svgHtml += `
+                        <circle cx="${cx}" cy="${cy}" r="22" fill="#ffffff" stroke="${strokeColor}" stroke-width="3" />
+                        <text x="${cx}" y="${cy + 8}" font-size="26" font-weight="bold" fill="${strokeColor}" text-anchor="middle">${cellNum}</text>
+                    `;
+                }
+
+                svgHtml += `</g>`;
+            });
+
+            svgHtml += `</svg>`;
+            container.innerHTML = svgHtml;
+        }
+
+        // --- マスタップ時のカウント処理 ---
+        function tapCell(side, cellIndex) {
+            if (isAnsweringBlocked) return;
+
+            // 既にカウント済みの場合はそのまま維持（削除・キャンセルしない）
+            if (cellCounts[side][cellIndex]) {
+                return;
+            }
+
+            playSoundTap();
+
+            // 未カウントの場合のみ次の番号を付与
+            currentCounts[side]++;
+            const assignedNum = currentCounts[side];
+            cellCounts[side][cellIndex] = assignedNum;
+
+            // タップした数字を音声で読み上げ
+            speakNumber(assignedNum);
+
+            // ブロック再描画
+            const q = questions[currentQuestion];
+            const pattern = side === 'left' ? q.left.pattern : q.right.pattern;
+            renderSimpleImageStyleBlocks(`container-${side}`, pattern, side);
+
+            // 左右両方の全てのマス目がタップされたか確認
+            const totalLeftCells = q.left.pattern.length;
+            const totalRightCells = q.right.pattern.length;
+            const countLeftTapped = Object.keys(cellCounts.left).length;
+            const countRightTapped = Object.keys(cellCounts.right).length;
+
+            if (countLeftTapped === totalLeftCells && countRightTapped === totalRightCells) {
+                if (questionPromptTimer) clearTimeout(questionPromptTimer);
+
+                // すべてのマスをタップし終わったら即座にタップしやすい強調枠線を表示
+                document.getElementById('btn-left').classList.add('ready-target');
+                document.getElementById('btn-right').classList.add('ready-target');
+
+                // 1 秒後に「おおきい は？」と音声指示
+                questionPromptTimer = setTimeout(() => {
+                    speakCurrentPrompt();
+                }, 1000);
+            }
+        }
+
+        // --- 回答チェック ---
+        function checkAnswer(selectedSide) {
+            if (isAnsweringBlocked) return;
+            const q = questions[currentQuestion];
+
+            if (selectedSide === q.correct) {
+                isAnsweringBlocked = true;
+                playSoundSuccess();
+
+                const btn = document.getElementById(`btn-${selectedSide}`);
+                btn.classList.add('celebrate-anim');
+
+                setTimeout(() => {
+                    btn.classList.remove('celebrate-anim');
+                    currentQuestion++;
+
+                    if (currentQuestion >= totalQuestions) {
+                        showResult();
+                    } else {
+                        renderQuestion();
+                    }
+                }, 1300);
+
+            } else {
+                playSoundError();
+                
+                const btn = document.getElementById(`btn-${selectedSide}`);
+                btn.classList.add('shake-anim');
+                setTimeout(() => {
+                    btn.classList.remove('shake-anim');
+                }, 400);
+            }
+        }
+
+        // --- 結果画面 ---
+        function showResult() {
+            document.getElementById('screen-game').classList.remove('flex');
+            document.getElementById('screen-game').classList.add('hidden');
+            document.getElementById('screen-result').classList.remove('hidden');
+            document.getElementById('screen-result').classList.add('flex');
+
+            playSoundVictory();
+            launchConfetti();
+        }
+    </script>
+</body>
+</html>
